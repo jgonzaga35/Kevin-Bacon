@@ -1,0 +1,143 @@
+#!/usr/bin/python3
+
+import sqlite3,sys
+from collections import defaultdict
+import itertools
+import operator
+
+# Must be 2 arguments
+if len(sys.argv) != 3 :
+  print("Usage:",sys.argv[0],"Actor 1 Actor 2")
+  sys.exit(1)
+
+# Connect to the Database
+con = sqlite3.connect('a2.db')
+cur = con.cursor()
+#Ah-sung Ko
+# GLOBAL VARIABLES
+actor_1 = sys.argv[1]
+actor_1 = actor_1.title()
+actor_2 = sys.argv[2]
+actor_2 = actor_2.title()
+paths = []
+actor_and_co_star = defaultdict(list)
+actors_films = []
+
+# Query
+query = '''
+SELECT m.id, m.year, m.title, GROUP_CONCAT(DISTINCT a.name)
+FROM movie m
+JOIN acting ON acting.movie_id = m.id
+JOIN actor a ON a.id = acting.actor_id
+GROUP BY m.id, m.title
+ORDER BY m.id desc
+'''
+cur.execute(query)
+distance = {}
+while True:
+    query_data = cur.fetchone()
+    if query_data == None:
+        break
+    m_id, m_year, m_title, actors = query_data
+    movie = '{} ({})'.format(m_title, m_year)
+    actors = list(actors.split(','))
+
+    for actor in actors:
+        star = actor
+        distance[actor] = -1
+        for index, co_star in enumerate(actors):
+            if co_star != star: 
+                co_star_and_movie = '{},{} ({})'.format(co_star, m_title,m_year)
+                movie = '{} ({})'.format(m_title, m_year)
+                actor_and_co_star[star].append(co_star_and_movie)
+                if actor_1 == actor_2 == actor and [movie] not in actors_films:
+                    actors_films.append([movie])
+
+def main(actors_films,paths):
+
+    # Traverse the graph and tag each actor with distance from source actor
+    distance[actor_1] = 0
+    queue = []
+    visited = []
+    queue.append(actor_1)
+    visited.append(actor_1)
+
+    while queue:
+        current_actor = queue.pop(0)
+        for co_star in actor_and_co_star[current_actor]:
+            co_star = co_star.split(',')
+            co_star = co_star[0]
+            if co_star not in visited:
+                visited.append(co_star)
+                queue.append(co_star)
+                distance[co_star] = 1 + distance[current_actor]
+
+    path = []
+    DFS_find_all_paths(actor_and_co_star, distance, actor_1, actor_2, path)
+
+    # Degrees of Separation must be >= 1 and <= 6
+    if len(paths) != 0 and len(paths[0]) <= 7:
+
+        # Remove duplicates from the paths and reverse them
+        paths = set(map(tuple,paths))
+        paths = map(list,paths)
+        paths = list(paths)
+        for path in paths:
+            path.reverse()
+
+        all_paths = sort_paths(paths)
+
+        i = 1
+        if actor_1 == actor_2:
+            actors_films = set(map(tuple,actors_films))
+            films = map(list, actors_films)
+            films = list(films)
+            sorted_films = sort_paths(films)
+            for movie_list in sorted_films:
+                string = '{}. '.format(i)
+                for movie in movie_list:
+                    string = string + actor_1 + " was in " + movie + " with " + actor_1 
+                i = i + 1 
+                print(string)
+        else:
+            for path in all_paths:
+                string = '{}. '.format(i)
+                for v, w in zip(path, path[1:]):
+                    strings = v.split(',')
+                    co_star = w.split(',')[0]
+                    actor = strings[0]
+                    movie = strings[1]
+                    string = string + actor + " was in " + movie + " with " + co_star
+                    if co_star != actor_2:
+                        string = string + "; "
+                i = i + 1
+                print(string)
+
+def my_key(movies):
+    return movies
+
+def sort_paths(lst):
+    lst.sort(key=my_key)
+    return lst
+
+def DFS_find_all_paths(actor_and_co_star, distance, actor_1, actor_2, path=[]):
+
+  path = path + [actor_2]
+  actor_2 = actor_2.split(',')
+  actor_2 = actor_2[0]
+  if actor_1 == actor_2:
+    paths.append(path)
+
+  for actor in actor_and_co_star[actor_2]:
+    actor_with_movie = actor 
+    actor = actor.split(',')[0]
+    if actor == actor_1:
+        DFS_find_all_paths(actor_and_co_star,distance,actor_1,actor_with_movie,path)
+    # find the actors with the lowest distance
+    if actor not in path:
+      if distance[actor] == distance[actor_2]-1:
+        DFS_find_all_paths(actor_and_co_star,distance,actor_1,actor_with_movie,path)
+
+  return path
+
+main(actors_films,paths)
